@@ -25,7 +25,7 @@
       <StatCard
         label="任务完成率"
         :value="formatPercent(overview.task.completion_rate)"
-        :hint="`已完成 ${overview.task.by_status.completed} / 共 ${overview.task.total} 项`"
+        :hint="`已完成 ${overview.task.by_status.completed} / 有效任务 ${overview.task.effective_total} 项（不含已取消）`"
         tone="info"
         icon="CircleCheck"
       />
@@ -174,7 +174,7 @@ function emptyDashboard() {
   return {
     overview: {
       green_space: { total: 0, total_area: 0, by_status: {} },
-      task: { total: 0, open_count: 0, overdue_count: 0, due_soon_count: 0, completion_rate: 0, by_status: {} },
+      task: { total: 0, open_count: 0, overdue_count: 0, due_soon_count: 0, effective_total: 0, completion_rate: 0, by_status: {} },
       record: { total: 0, month_count: 0, month_work_hours: 0, total_work_hours: 0 },
       replacement: { total: 0, month_count: 0, month_quantity: 0, month_amount: 0, year_amount: 0, total_amount: 0 },
     },

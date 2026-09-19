@@ -217,13 +217,41 @@ class MaintenanceTaskService(BaseService):
         return {"detached_records": record_count}
 
     @classmethod
-    def status_summary(cls):
-        rows = (
-            db.session.query(MaintenanceTask.status, func.count(MaintenanceTask.id))
-            .group_by(MaintenanceTask.status)
-            .all()
-        )
-        summary = {code: 0 for code in ENUM_GROUPS["task_status"].values}
+    def completion_stats(cls, green_space_id=None):
+        """任务完成率的唯一口径来源，看板、任务列表与绿地档案统一使用。
+
+        计入规则（与任务状态机一致）：
+        - 「已完成」计入分子；
+        - 「待执行 / 进行中」计入分母（含存在待复检记录、或存在不合格记录
+          等待整改复检的任务）；
+        - 「已取消」分子分母都不计入。
+
+        完成率为当前时点快照，历史月份不回溯重算。
+        """
+
+        query = db.session.query(MaintenanceTask.status, func.count(MaintenanceTask.id))
+        if green_space_id is not None:
+            query = query.filter(MaintenanceTask.green_space_id == green_space_id)
+        rows = query.group_by(MaintenanceTask.status).all()
+        by_status = {code: 0 for code in ENUM_GROUPS["task_status"].values}
         for status, count in rows:
-            summary[status] = count
-        return summary
+            by_status[status] = count
+        completed = by_status["completed"]
+        effective_total = sum(by_status.values()) - by_status["cancelled"]
+        return {
+            "by_status": by_status,
+            "completed": completed,
+            "effective_total": effective_total,
+            "completion_rate": round(completed / effective_total * 100, 1)
+            if effective_total
+            else 0.0,
+        }
+
+    @classmethod
+    def status_summary(cls):
+        stats = cls.completion_stats()
+        return {
+            **stats["by_status"],
+            "effective_total": stats["effective_total"],
+            "completion_rate": stats["completion_rate"],
+        }

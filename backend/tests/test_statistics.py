@@ -19,6 +19,52 @@ def test_overview_reflects_seeded_data(api, seeded):
     assert data["replacement"]["total_amount"] > 0
 
 
+def test_completion_rate_excludes_cancelled(api, make_space, make_task):
+    """统一口径：已取消任务不计入分母，三处（看板/任务列表/绿地档案）结果一致。"""
+
+    space = make_space()
+    make_task(space=space, status="completed")
+    make_task(space=space, status="in_progress")
+    make_task(space=space, status="cancelled")
+
+    overview = api.data(api.get("/api/v1/statistics/overview"))
+    # 有效任务 2 项（不含已取消），完成 1 项 → 50%
+    assert overview["task"]["effective_total"] == 2
+    assert overview["task"]["completion_rate"] == 50.0
+
+    listing = api.data(api.get("/api/v1/maintenance-tasks"))
+    assert listing["summary"]["effective_total"] == 2
+    assert listing["summary"]["completion_rate"] == 50.0
+
+    profile = api.data(api.get(f"/api/v1/green-spaces/{space.id}/profile"))
+    assert profile["statistics"]["task_effective_total"] == 2
+    assert profile["statistics"]["task_completion_rate"] == 50.0
+
+
+def test_completion_rate_counts_pending_and_unqualified_as_unfinished(api, make_task, make_record):
+    """待复检、不合格记录的任务保持未完成：计入分母，不计入分子。"""
+
+    pending_task = make_task()
+    make_record(task=pending_task, quality_result="pending")
+    unqualified_task = make_task()
+    make_record(task=unqualified_task, quality_result="unqualified")
+
+    overview = api.data(api.get("/api/v1/statistics/overview"))
+    assert overview["task"]["by_status"]["completed"] == 0
+    assert overview["task"]["effective_total"] == 2
+    assert overview["task"]["completion_rate"] == 0.0
+
+
+def test_completion_rate_zero_when_no_effective_tasks(api, make_task):
+    """全部任务已取消时分母为 0，完成率按 0 处理而不是报错。"""
+
+    make_task(status="cancelled")
+    overview = api.data(api.get("/api/v1/statistics/overview"))
+    assert overview["task"]["effective_total"] == 0
+    assert overview["task"]["completion_rate"] == 0.0
+
+
+
 def test_overdue_and_due_soon_reminders(api, make_space, make_task):
     space = make_space()
     make_task(space=space, plan_date=date.today() - timedelta(days=3), status="pending")

@@ -37,7 +37,9 @@
           待执行 <strong>{{ summary?.pending ?? 0 }}</strong>、
           进行中 <strong>{{ summary?.in_progress ?? 0 }}</strong>、
           已完成 <strong>{{ summary?.completed ?? 0 }}</strong>、
-          已取消 <strong>{{ summary?.cancelled ?? 0 }}</strong>
+          已取消 <strong>{{ summary?.cancelled ?? 0 }}</strong>，
+          完成率 <strong>{{ formatPercent(summary?.completion_rate) }}</strong>
+          <span class="summary-note">（已完成 / 有效任务 {{ summary?.effective_total ?? 0 }} 项，不含已取消）</span>
         </span>
         <el-button :icon="'Refresh'" text @click="load">刷新</el-button>
       </div>
@@ -131,6 +133,7 @@ import GreenSpaceSelect from '@/components/common/GreenSpaceSelect.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import { useEnumOptions } from '@/composables/useEnumOptions'
 import { useListQuery } from '@/composables/useListQuery'
+import { formatPercent } from '@/utils/format'
 
 import TaskDetailDrawer from './TaskDetailDrawer.vue'
 import TaskFormDialog from './TaskFormDialog.vue'
@@ -204,6 +207,11 @@ async function remove(row) {
 }
 
 .cell-sub {
+  color: #909399;
+  font-size: 12px;
+}
+
+.summary-note {
   color: #909399;
   font-size: 12px;
 }

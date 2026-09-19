@@ -10,6 +10,7 @@ from ..models import GreenSpace, MaintenanceRecord, MaintenanceTask, PlantReplac
 from ..models.maintenance_task import OPEN_STATUSES
 from ..utils.dates import today
 from ..utils.numbers import to_float
+from .maintenance_task_service import MaintenanceTaskService
 
 
 class StatisticsService:
@@ -44,14 +45,8 @@ class StatisticsService:
         for status, count in space_rows:
             space_status[status] = count
 
-        task_rows = (
-            db.session.query(MaintenanceTask.status, func.count(MaintenanceTask.id))
-            .group_by(MaintenanceTask.status)
-            .all()
-        )
-        task_status = {code: 0 for code in ENUM_GROUPS["task_status"].values}
-        for status, count in task_rows:
-            task_status[status] = count
+        task_stats = MaintenanceTaskService.completion_stats()
+        task_status = task_stats["by_status"]
         task_total = sum(task_status.values())
 
         overdue = (
@@ -96,7 +91,6 @@ class StatisticsService:
             func.coalesce(func.sum(PlantReplacement.amount), 0),
         ).filter(PlantReplacement.replace_date >= year_start).one()
 
-        completed = task_status.get("completed", 0)
         return {
             "generated_at": f"{current:%Y-%m-%d}",
             "green_space": {
@@ -110,7 +104,8 @@ class StatisticsService:
                 "open_count": task_status.get("pending", 0) + task_status.get("in_progress", 0),
                 "overdue_count": overdue,
                 "due_soon_count": due_soon,
-                "completion_rate": round(completed / task_total * 100, 1) if task_total else 0.0,
+                "effective_total": task_stats["effective_total"],
+                "completion_rate": task_stats["completion_rate"],
             },
             "record": {
                 "total": record_total or 0,

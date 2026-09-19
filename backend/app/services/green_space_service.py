@@ -12,6 +12,7 @@ from ..utils.numbers import to_float
 from ..utils.sorting import parse_sort
 from .base_service import BaseService
 from .code_generator import year_prefix
+from .maintenance_task_service import MaintenanceTaskService
 
 
 class GreenSpaceService(BaseService):
@@ -177,15 +178,8 @@ class GreenSpaceService(BaseService):
             func.coalesce(func.sum(PlantReplacement.amount), 0),
         ).filter(PlantReplacement.green_space_id == space.id).one()
 
-        task_rows = (
-            db.session.query(MaintenanceTask.status, func.count(MaintenanceTask.id))
-            .filter(MaintenanceTask.green_space_id == space.id)
-            .group_by(MaintenanceTask.status)
-            .all()
-        )
-        task_status = {status: 0 for status in ENUM_GROUPS["task_status"].values}
-        for status, count in task_rows:
-            task_status[status] = count
+        task_stats = MaintenanceTaskService.completion_stats(green_space_id=space.id)
+        task_status = task_stats["by_status"]
 
         replacement_summary = db.session.query(
             PlantReplacement.reason,
@@ -226,6 +220,8 @@ class GreenSpaceService(BaseService):
                 "replacement_quantity": to_float(replacement_stats[1]) or 0,
                 "replacement_amount": to_float(replacement_stats[2]) or 0,
                 "task_status": task_status,
+                "task_effective_total": task_stats["effective_total"],
+                "task_completion_rate": task_stats["completion_rate"],
                 "is_maintenance_overdue": (
                     record_stats[2] is None or (today() - record_stats[2]).days > 30
                 ),

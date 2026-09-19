@@ -38,8 +38,8 @@
       <StatCard label="绿植更换" :value="formatNumber(statistics.replacement_quantity)"
                 :hint="`共 ${formatNumber(statistics.replacement_count)} 次，金额 ${formatCurrency(statistics.replacement_amount)}`"
                 icon="Cherry" />
-      <StatCard label="养护任务" :value="formatNumber(taskTotal)" unit="项"
-                :hint="`已完成 ${statistics.task_status.completed || 0} 项，进行中 ${(statistics.task_status.in_progress || 0) + (statistics.task_status.pending || 0)} 项`"
+      <StatCard label="养护任务" :value="formatPercent(statistics.task_completion_rate)"
+                :hint="`已完成 ${statistics.task_status.completed || 0} / 有效任务 ${statistics.task_effective_total || 0} 项（不含已取消）`"
                 tone="info" icon="Tickets" />
     </div>
 
@@ -135,14 +135,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { greenSpaceApi } from '@/api'
 import EnumTag from '@/components/common/EnumTag.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatCard from '@/components/common/StatCard.vue'
-import { formatArea, formatCurrency, formatDate, formatHours, formatNumber } from '@/utils/format'
+import { formatArea, formatCurrency, formatDate, formatHours, formatNumber, formatPercent } from '@/utils/format'
 
 import GreenSpaceFormDialog from './GreenSpaceFormDialog.vue'
 
@@ -153,15 +153,11 @@ const loading = ref(false)
 const activeTab = ref('tasks')
 
 const space = ref({})
-const statistics = ref({ task_status: {}, record_count: 0, total_work_hours: 0, replacement_count: 0, replacement_quantity: 0, replacement_amount: 0 })
+const statistics = ref({ task_status: {}, record_count: 0, total_work_hours: 0, replacement_count: 0, replacement_quantity: 0, replacement_amount: 0, task_effective_total: 0, task_completion_rate: 0 })
 const recentTasks = ref([])
 const recentRecords = ref([])
 const recentReplacements = ref([])
 const replacementSummary = ref([])
-
-const taskTotal = computed(() =>
-  Object.values(statistics.value.task_status || {}).reduce((sum, value) => sum + value, 0),
-)
 
 async function load() {
   loading.value = true
