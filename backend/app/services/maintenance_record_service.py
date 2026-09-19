@@ -13,6 +13,7 @@ from ..utils.numbers import to_float
 from ..utils.sorting import parse_sort
 from .base_service import BaseService
 from .code_generator import daily_prefix
+from .task_completion import derive_task_status
 
 
 class MaintenanceRecordService(BaseService):
@@ -21,10 +22,12 @@ class MaintenanceRecordService(BaseService):
     与养护任务的联动规则（在同一个事务内完成）：
 
     1. 任务处于「待执行」时登记记录，任务自动转为「进行中」；
-    2. 任务存在合格记录且没有不合格记录时，任务自动转为「已完成」；
-    3. 存在不合格记录时任务保持「进行中」，等待整改复检；
+    2. 任务有合格记录且没有待复检、不合格记录时，任务自动转为「已完成」；
+    3. 存在待复检或不合格记录时任务保持「进行中」，等待复检结论或整改；
     4. 删除记录后重新推算任务状态，避免出现「已完成但没有记录」的脏数据；
     5. 已取消的任务不允许再补录记录。
+
+    状态推导口径集中在 task_completion 模块，与完成率统计保持一致。
     """
 
     model = MaintenanceRecord
@@ -84,7 +87,7 @@ class MaintenanceRecordService(BaseService):
     # ------------------------------------------------------------ 任务状态联动
     @classmethod
     def sync_task_status(cls, task_id, *, task=None):
-        """按该任务下的全部养护记录重新推算任务状态。"""
+        """按该任务下的全部养护记录重新推算任务状态（口径见 task_completion）。"""
 
         if task is None:
             if not task_id:
@@ -100,20 +103,12 @@ class MaintenanceRecordService(BaseService):
             .filter(MaintenanceRecord.task_id == task.id)
             .all()
         )
-        if not records:
-            task.status = "pending"
-            task.completed_at = None
-            return task
-
-        qualified = [item for item in records if item.quality_result == "qualified"]
-        unqualified = [item for item in records if item.quality_result == "unqualified"]
-
-        if qualified and not unqualified:
-            task.status = "completed"
+        status = derive_task_status(records)
+        task.status = status
+        if status == "completed":
             latest = max(item.record_date for item in records)
             task.completed_at = datetime.combine(latest, time.min)
         else:
-            task.status = "in_progress"
             task.completed_at = None
         return task
 

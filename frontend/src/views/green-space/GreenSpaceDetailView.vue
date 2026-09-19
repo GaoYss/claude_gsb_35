@@ -39,7 +39,7 @@
                 :hint="`共 ${formatNumber(statistics.replacement_count)} 次，金额 ${formatCurrency(statistics.replacement_amount)}`"
                 icon="Cherry" />
       <StatCard label="养护任务" :value="formatNumber(taskTotal)" unit="项"
-                :hint="`已完成 ${statistics.task_status.completed || 0} 项，进行中 ${(statistics.task_status.in_progress || 0) + (statistics.task_status.pending || 0)} 项`"
+                :hint="`已完成 ${statistics.task_status.completed || 0} / 应完成 ${statistics.task_countable ?? 0} 项，完成率 ${formatPercent(statistics.task_completion_rate)}`"
                 tone="info" icon="Tickets" />
     </div>
 
@@ -142,7 +142,7 @@ import { greenSpaceApi } from '@/api'
 import EnumTag from '@/components/common/EnumTag.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatCard from '@/components/common/StatCard.vue'
-import { formatArea, formatCurrency, formatDate, formatHours, formatNumber } from '@/utils/format'
+import { formatArea, formatCurrency, formatDate, formatHours, formatNumber, formatPercent } from '@/utils/format'
 
 import GreenSpaceFormDialog from './GreenSpaceFormDialog.vue'
 

@@ -2,7 +2,6 @@
 
 from sqlalchemy import func, or_
 
-from ..constants import ENUM_GROUPS
 from ..errors import ConflictError, ValidationError
 from ..extensions import db
 from ..models import GreenSpace, MaintenanceRecord, MaintenanceTask, PlantReplacement
@@ -13,6 +12,7 @@ from ..utils.numbers import to_float
 from ..utils.sorting import parse_sort
 from .base_service import BaseService
 from .code_generator import daily_prefix
+from .task_completion import completion_blockers, completion_summary
 
 
 class MaintenanceTaskService(BaseService):
@@ -161,7 +161,8 @@ class MaintenanceTaskService(BaseService):
     def change_status(cls, obj_id, payload):
         """手动流转任务状态。
 
-        规则：存在不合格养护记录时不允许直接标记完成，需先整改；
+        规则：存在不合格或待复检的养护记录时不允许直接标记完成，
+        需先整改复检并出具结论（与记录联动的判定口径一致，见 task_completion）；
         标记完成会写入完成时间，撤销完成则清空完成时间。
         """
 
@@ -171,18 +172,20 @@ class MaintenanceTaskService(BaseService):
             task.description = payload["description"]
 
         if status == "completed":
-            unqualified = (
-                db.session.query(func.count(MaintenanceRecord.id))
-                .filter(
-                    MaintenanceRecord.task_id == task.id,
-                    MaintenanceRecord.quality_result == "unqualified",
-                )
-                .scalar()
-                or 0
+            records = (
+                db.session.query(MaintenanceRecord)
+                .filter(MaintenanceRecord.task_id == task.id)
+                .all()
             )
-            if unqualified:
+            unqualified, pending = completion_blockers(records)
+            if unqualified or pending:
+                reasons = []
+                if unqualified:
+                    reasons.append(f"{unqualified} 条不合格记录待整改")
+                if pending:
+                    reasons.append(f"{pending} 条记录待复检")
                 raise ConflictError(
-                    f"该任务存在 {unqualified} 条不合格养护记录，请整改复检合格后再标记完成"
+                    f"该任务存在 {'、'.join(reasons)}，出具合格结论后才能标记完成"
                 )
             task.completed_at = task.completed_at or utcnow()
         else:
@@ -218,12 +221,11 @@ class MaintenanceTaskService(BaseService):
 
     @classmethod
     def status_summary(cls):
-        rows = (
-            db.session.query(MaintenanceTask.status, func.count(MaintenanceTask.id))
-            .group_by(MaintenanceTask.status)
-            .all()
-        )
-        summary = {code: 0 for code in ENUM_GROUPS["task_status"].values}
-        for status, count in rows:
-            summary[status] = count
-        return summary
+        """列表汇总条：四状态计数 + 完成率（口径与看板一致，见 task_completion）。"""
+
+        summary = completion_summary()
+        return {
+            **summary["by_status"],
+            "countable": summary["countable"],
+            "completion_rate": summary["rate"],
+        }

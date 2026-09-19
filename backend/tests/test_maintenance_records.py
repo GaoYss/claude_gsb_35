@@ -97,6 +97,39 @@ def test_unqualified_record_blocks_task_completion(api, make_task):
     assert api.data(api.get(f"/api/v1/maintenance-tasks/{task.id}"))["status"] == "completed"
 
 
+def test_pending_recheck_record_blocks_task_completion(api, make_task):
+    """待复检记录视为结论未定：任务保持进行中，出具合格结论后才完成。"""
+
+    task = make_task()
+    recheck = api.data(api.post("/api/v1/maintenance-records", {
+        "task_id": task.id,
+        "record_date": "2026-03-12",
+        "work_content": "修剪完成，等待复检",
+        "quality_result": "pending",
+    }), 201)
+    assert api.data(api.get(f"/api/v1/maintenance-tasks/{task.id}"))["status"] == "in_progress"
+
+    # 已有合格记录，但仍有记录待复检，任务不计完成
+    api.post("/api/v1/maintenance-records", {
+        "task_id": task.id,
+        "record_date": "2026-03-15",
+        "work_content": "补修完成",
+        "quality_result": "qualified",
+    })
+    detail = api.data(api.get(f"/api/v1/maintenance-tasks/{task.id}"))
+    assert detail["status"] == "in_progress"
+    assert detail["completed_at"] is None
+
+    # 待复检记录出具合格结论后，任务自动完成
+    api.put(f"/api/v1/maintenance-records/{recheck['id']}", {
+        "task_id": task.id,
+        "record_date": "2026-03-12",
+        "work_content": "复检合格",
+        "quality_result": "qualified",
+    })
+    assert api.data(api.get(f"/api/v1/maintenance-tasks/{task.id}"))["status"] == "completed"
+
+
 def test_cancelled_task_rejects_new_record(api, make_task):
     task = make_task(status="cancelled")
     response = api.post("/api/v1/maintenance-records", {

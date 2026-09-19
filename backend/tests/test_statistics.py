@@ -3,6 +3,57 @@
 from datetime import date, timedelta
 
 
+def test_completion_rate_excludes_cancelled_tasks(api, make_task):
+    """统一口径：已取消任务不计入完成率分子分母。"""
+
+    make_task(status="completed")
+    make_task(status="completed")
+    make_task(status="in_progress")
+    make_task(status="cancelled")
+
+    task = api.data(api.get("/api/v1/statistics/overview"))["task"]
+    assert task["total"] == 4
+    assert task["countable"] == 3
+    assert task["completion_rate"] == round(2 / 3 * 100, 1)
+
+
+def test_completion_rate_consistent_across_list_profile_and_dashboard(api, make_space, make_task):
+    """任务列表、绿地档案、总览看板同一批数据必须出同一个完成率。"""
+
+    space = make_space()
+    make_task(space=space, status="completed")
+    make_task(space=space, status="in_progress")
+    make_task(space=space, status="cancelled")
+
+    overview_task = api.data(api.get("/api/v1/statistics/overview"))["task"]
+    listing = api.data(api.get("/api/v1/maintenance-tasks"))
+    profile = api.data(api.get(f"/api/v1/green-spaces/{space.id}/profile"))
+
+    assert overview_task["completion_rate"] == 50.0
+    assert listing["summary"]["completion_rate"] == overview_task["completion_rate"]
+    assert listing["summary"]["countable"] == overview_task["countable"] == 2
+    assert profile["statistics"]["task_completion_rate"] == overview_task["completion_rate"]
+    assert profile["statistics"]["task_countable"] == 2
+
+
+def test_reads_do_not_recompute_historical_task_status(api, app, make_task, make_record):
+    """历史月份已落库的任务状态不被查询接口重算，仅记录增删改才触发重推导。"""
+
+    from app.extensions import db
+
+    task = make_task()
+    make_record(task=task, quality_result="qualified")
+    make_record(task=task, quality_result="pending", record_date=date(2026, 3, 20))
+    # 模拟口径调整前已落库的「已完成」状态（按现行推导应为进行中）
+    task.status = "completed"
+    db.session.commit()
+
+    api.data(api.get("/api/v1/statistics/overview"))
+    api.data(api.get("/api/v1/maintenance-tasks"))
+    api.data(api.get(f"/api/v1/green-spaces/{task.green_space_id}/profile"))
+    assert api.data(api.get(f"/api/v1/maintenance-tasks/{task.id}"))["status"] == "completed"
+
+
 def test_overview_reflects_seeded_data(api, seeded):
     data = api.data(api.get("/api/v1/statistics/overview"))
     assert data["green_space"]["total"] == seeded["green_space"]

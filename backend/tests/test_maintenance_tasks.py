@@ -85,6 +85,16 @@ def test_cannot_complete_task_with_unqualified_record(api, make_task, make_recor
     assert "不合格" in response.get_json()["message"]
 
 
+def test_cannot_complete_task_with_pending_recheck_record(api, make_task, make_record):
+    """存在待复检记录时同样不允许手动标记完成（与自动联动口径一致）。"""
+
+    task = make_task()
+    make_record(task=task, quality_result="pending")
+    response = api.patch(f"/api/v1/maintenance-tasks/{task.id}/status", {"status": "completed"})
+    assert response.status_code == 409
+    assert "待复检" in response.get_json()["message"]
+
+
 def test_status_payload_requires_valid_enum(api, make_task):
     task = make_task()
     response = api.patch(f"/api/v1/maintenance-tasks/{task.id}/status", {"status": "done"})

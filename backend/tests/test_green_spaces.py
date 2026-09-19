@@ -104,15 +104,29 @@ def test_update_ignores_code_change(api, make_space):
 def test_detail_and_profile_aggregate_related_data(api, make_task, make_record):
     task = make_task()
     make_record(task=task, work_hours=8)
-    make_record(task=task, work_hours=4, quality_result="pending", record_date=date(2026, 3, 20))
+    pending_record = make_record(task=task, work_hours=4, quality_result="pending",
+                                 record_date=date(2026, 3, 20))
 
     data = api.data(api.get(f"/api/v1/green-spaces/{task.green_space_id}/profile"))
     assert data["green_space"]["name"] == task.green_space.name
     assert data["statistics"]["record_count"] == 2
     assert data["statistics"]["total_work_hours"] == 12.0
     assert data["statistics"]["last_maintenance_date"] == "2026-03-20"
-    assert data["statistics"]["task_status"]["completed"] == 1
+    # 有待复检记录时任务保持进行中，不计入完成
+    assert data["statistics"]["task_status"]["in_progress"] == 1
+    assert data["statistics"]["task_completion_rate"] == 0.0
     assert len(data["recent_records"]) == 2
+
+    # 待复检记录出具合格结论后，任务完成，档案完成率同步
+    api.put(f"/api/v1/maintenance-records/{pending_record.id}", {
+        "task_id": task.id,
+        "record_date": "2026-03-20",
+        "work_content": "复检合格",
+        "quality_result": "qualified",
+    })
+    data = api.data(api.get(f"/api/v1/green-spaces/{task.green_space_id}/profile"))
+    assert data["statistics"]["task_status"]["completed"] == 1
+    assert data["statistics"]["task_completion_rate"] == 100.0
 
 
 def test_delete_is_blocked_until_force(api, make_task):
